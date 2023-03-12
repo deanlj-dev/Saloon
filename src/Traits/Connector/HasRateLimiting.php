@@ -27,13 +27,9 @@ trait HasRateLimiting
         // We'll now run the "setConnectorName" on each of the limits because
         // this will allow the limit classes to populate the ID properly.
 
-        $limits = LimitHelper::hydrateLimits($this->resolveLimits(), $this);
-
         // We'll now have an array of the limits with IDs that can be generated.
 
-        $store = $this->resolveRateLimitStore();
-
-        $pendingRequest->middleware()->onRequest(function (PendingRequest $pendingRequest) use ($limits, $store) {
+        $pendingRequest->middleware()->onRequest(function (PendingRequest $pendingRequest) {
             // We'll check here if we have reached the rate limit - if we have
             // then we need to throw the limit exception
 
@@ -42,47 +38,41 @@ trait HasRateLimiting
             }
         });
 
+        $limits = LimitHelper::configureLimits($this->resolveLimits(), $this);
+        $store = $this->resolveRateLimitStore();
+
         // Register the limit counter
 
         $pendingRequest->middleware()->onResponse(function (Response $response) use ($limits, $store) {
-            $limitReached = null;
+            $limitThatWasExceeded = null;
 
             foreach ($limits as $limit) {
                 $limit = $store->hydrateLimit($limit);
 
-                // Todo: Rename processLimit to "handleRateLimitResponse"
+                // We'll make sure our limits haven't been exceeded yet - if they haven't then
+                // we will run the `checkForTooManyAttempts` method.
 
-                $this->processLimit($response, $limit);
+                // Todo: Consider renaming checkForTooManyAttempts
 
-                // Todo: Maybe check here if hasExceededLimit which means we've been manually exceeded. We'll then just commit this one and throw
+                if (is_null($limitThatWasExceeded)) {
+                    $this->checkForTooManyAttempts($response, $limit);
+                }
 
-                // Todo: Always run $limit->hit() after handling the limit response
+                if ($limit->hasExceeded()) {
+                    $limitThatWasExceeded = $limit;
+                }
+
+                // Now we'll "hit" the limit which will increase the count
+
+                $limit->hit();
+
+                // Next, we'll commit the limit onto the store
 
                 $store->commitLimit($limit);
-
-                // We should set a variable here so even if the first limiter gets
-                // thrown, we will commit every limiter.
-
-                // Todo:
-                // Problem Scenario: Say that the response is 429 and our code runs the "exceeded"
-                // method. The issue with this method is that it will commit the max for every
-                // limiter, not just the one we want - which could make it trickier because
-                // it may only be hitting a specific limiter, like 429 too many attempts in
-                // the current hour, we don't have to rule out the whole day
-
-                /**
-                 * Todo
-                 * Not sure about checking if we have reached the limit here because
-                 * you could make request 10 but it will throw an exception even though the response is probably fine
-                 */
-
-                if ($limit->hasReachedLimit()) {
-                    $limitReached = $limit;
-                }
             }
 
-            if ($limitReached) {
-                $this->throwLimitException($limitReached);
+            if (isset($limitThatWasExceeded)) {
+                $this->throwLimitException($limitThatWasExceeded);
             }
         });
     }
@@ -108,15 +98,11 @@ trait HasRateLimiting
      * @param \Saloon\Http\RateLimiting\Limit $limit
      * @return void
      */
-    protected function processLimit(Response $response, Limit $limit): void
+    protected function checkForTooManyAttempts(Response $response, Limit $limit): void
     {
         if ($response->status() === 429) {
             $limit->exceeded();
-
-            return;
         }
-
-        $limit->hit();
     }
 
     /**
@@ -134,12 +120,13 @@ trait HasRateLimiting
     /**
      * Get the first limit that has exceeded
      *
+     * @param float|null $threshold
      * @return \Saloon\Http\RateLimiting\Limit|null
      * @throws \ReflectionException
      */
-    public function getExceededLimit(): ?Limit
+    public function getExceededLimit(?float $threshold = null): ?Limit
     {
-        $limits = LimitHelper::hydrateLimits($this->resolveLimits(), $this);
+        $limits = LimitHelper::configureLimits($this->resolveLimits(), $this);
 
         if (empty($limits)) {
             return null;
@@ -150,7 +137,7 @@ trait HasRateLimiting
         foreach ($limits as $limit) {
             $limit = $store->hydrateLimit($limit);
 
-            if ($limit->hasReachedLimit()) {
+            if ($limit->hasReachedLimit($threshold)) {
                 return $limit;
             }
         }
@@ -161,11 +148,12 @@ trait HasRateLimiting
     /**
      * Check if we have reached the rate limit
      *
+     * @param float|null $threshold
      * @return bool
      * @throws \ReflectionException
      */
-    public function hasReachedRateLimit(): bool
+    public function hasReachedRateLimit(?float $threshold = null): bool
     {
-        return $this->getExceededLimit() instanceof Limit;
+        return $this->getExceededLimit($threshold) instanceof Limit;
     }
 }

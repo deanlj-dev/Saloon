@@ -18,7 +18,7 @@ class LimitHelper
      * @return array<\Saloon\Http\RateLimiting\Limit>
      * @throws \ReflectionException
      */
-    public static function hydrateLimits(array $limits, Connector|Request $connectorOrRequest): array
+    public static function configureLimits(array $limits, Connector|Request $connectorOrRequest): array
     {
         $limits = array_filter($limits, static fn (mixed $value) => $value instanceof Limit);
 
@@ -27,7 +27,7 @@ class LimitHelper
         }
 
         $limits = Arr::mapWithKeys($limits, static function (Limit $limit, int|string $key) use ($connectorOrRequest) {
-            return [$key => is_string($key) ? $limit->id($key) : $limit->setObjectName($connectorOrRequest)];
+            return [$key => is_string($key) ? $limit->name($key) : $limit->setObjectName($connectorOrRequest)];
         });
 
         return array_values($limits);

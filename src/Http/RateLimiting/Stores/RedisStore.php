@@ -23,13 +23,15 @@ class RedisStore implements RateLimitStore
     /**
      * Hydrate the properties on the limit (hits, timestamp etc)
      *
+     * Todo: Consider changing the name
+     *
      * @param \Saloon\Http\RateLimiting\Limit $limit
      * @return \Saloon\Http\RateLimiting\Limit
      * @throws \JsonException
      */
     public function hydrateLimit(Limit $limit): Limit
     {
-        $value = $this->redis->get($limit->getId());
+        $value = $this->redis->get($limit->getName());
 
         if (is_null($value)) {
             return $limit;
@@ -41,6 +43,8 @@ class RedisStore implements RateLimitStore
     /**
      * Commit the properties on the limit (hits, timestamp)
      *
+     * Todo: Consider changing the name
+     *
      * @param \Saloon\Http\RateLimiting\Limit $limit
      * @return void
      * @throws \JsonException
@@ -48,7 +52,7 @@ class RedisStore implements RateLimitStore
     public function commitLimit(Limit $limit): void
     {
         $this->redis->setex(
-            key: $limit->getId(),
+            key: $limit->getName(),
             seconds: $limit->getRemainingSeconds(),
             value: $limit->serializeStoreData()
         );

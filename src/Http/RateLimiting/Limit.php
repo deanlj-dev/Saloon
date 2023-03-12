@@ -19,7 +19,7 @@ class Limit
      */
     protected string $objectName;
 
-    protected ?string $customId = null;
+    protected ?string $name = null;
 
     protected int $hits = 0;
 
@@ -31,21 +31,19 @@ class Limit
 
     protected int $releaseInSeconds;
 
-    protected bool $untilMidnight = false;
+    protected ?string $timeToLiveKey = null;
+
+    protected bool $exceeded = false;
 
     public function __construct(int $allow, float $threshold = 1)
     {
-        if ($threshold < 0 || $threshold > 1) {
-            throw new InvalidArgumentException('Threshold must be a float between 0 and 1. For example a 85% threshold would be 0.85.');
-        }
-
         // Todo: Build protections into here to prevent limiters being used that haven't been properly setup
 
         $this->allow = $allow;
         $this->threshold = $threshold;
     }
 
-    public static function allow(int $allow, float $threshold = 0.95): static
+    public static function allow(int $allow, float $threshold = 1): static
     {
         return new self($allow, $threshold);
     }
@@ -67,6 +65,8 @@ class Limit
 
     public function exceeded($releaseInSeconds = null): void
     {
+        $this->exceeded = true;
+
         $this->hits = $this->allow;
 
         if (isset($releaseInSeconds)) {
@@ -74,9 +74,21 @@ class Limit
         }
     }
 
-    public function hasReachedLimit(): bool
+    /**
+     * Check if the limit has been reached
+     *
+     * @param float|null $threshold
+     * @return bool
+     */
+    public function hasReachedLimit(?float $threshold = null): bool
     {
-        return $this->hits >= ($this->threshold * $this->allow);
+        $threshold ??= $this->threshold;
+
+        if ($threshold < 0 || $threshold > 1) {
+            throw new InvalidArgumentException('Threshold must be a float between 0 and 1. For example a 85% threshold would be 0.85.');
+        }
+
+        return $this->hits >= ($threshold * $this->allow);
     }
 
     public function getReleaseInSeconds(): int
@@ -91,27 +103,32 @@ class Limit
 
     public function hit(int $amount = 1): static
     {
-        // Todo: If we have exceeded limit $exceededLimit === true then we ignore any additional hits
-
-        $this->hits += $amount;
+        if (! $this->hasExceeded()) {
+            $this->hits += $amount;
+        }
 
         return $this;
     }
 
-    public function getId(): string
+    /**
+     * Get the name of the limit
+     *
+     * @return string
+     */
+    public function getName(): string
     {
-        return $this->customId ?? sprintf('%s_a:%sr:%s', $this->objectName, $this->allow, $this->untilMidnight ? 'midnight' : $this->releaseInSeconds);
+        return $this->name ?? sprintf('%s_allow_%s_every_%s', $this->objectName, $this->allow, $this->timeToLiveKey ?? (string)$this->releaseInSeconds);
     }
 
     /**
-     * with a custom id
+     * Specify a custom name
      *
-     * @param string|null $id
+     * @param string|null $name
      * @return $this
      */
-    public function id(?string $id): Limit
+    public function name(?string $name): Limit
     {
-        $this->customId = $id;
+        $this->name = $name;
 
         return $this;
     }
@@ -148,9 +165,10 @@ class Limit
         return $this;
     }
 
-    public function everySeconds(int $seconds): static
+    public function everySeconds(int $seconds, ?string $timeToLiveKey = null): static
     {
         $this->releaseInSeconds = $seconds;
+        $this->timeToLiveKey = $timeToLiveKey;
 
         return $this;
     }
@@ -192,9 +210,12 @@ class Limit
 
     public function untilMidnightTonight(): static
     {
-        $this->untilMidnight = true;
+        // Todo: Consider using timestamp from Date helper
 
-        return $this->everySeconds(strtotime('tomorrow') - time());
+        return $this->everySeconds(
+            seconds: strtotime('tomorrow') - time(),
+            timeToLiveKey: 'midnight'
+        );
     }
 
     /**
@@ -243,5 +264,15 @@ class Limit
         $now = Date::now()->toDateTime()->getTimestamp();
 
         return (int)round($this->getExpiryTimestamp() - $now);
+    }
+
+    public function hasExceeded(): bool
+    {
+        return $this->exceeded;
+    }
+
+    public function validate()
+    {
+        //
     }
 }
