@@ -22,40 +22,43 @@ trait HasRateLimiting
      */
     public function bootHasRateLimiting(PendingRequest $pendingRequest): void
     {
-        // Todo: Allow people to customise the name and not just the connector name
+        // Firstly, we'll register a request middleware that will check if we have
+        // exceeded any limits already. If we have, then this middleware will stop
+        // the request from being processed.
 
-        // We'll now run the "setConnectorName" on each of the limits because
-        // this will allow the limit classes to populate the ID properly.
-
-        // We'll now have an array of the limits with IDs that can be generated.
-
-        $pendingRequest->middleware()->onRequest(function (PendingRequest $pendingRequest) {
-            // We'll check here if we have reached the rate limit - if we have
-            // then we need to throw the limit exception
-
+        $pendingRequest->middleware()->onRequest(function () {
             if ($limit = $this->getExceededLimit()) {
                 $this->throwLimitException($limit);
             }
         });
 
-        $limits = LimitHelper::configureLimits($this->resolveLimits(), $this);
-        $store = $this->resolveRateLimitStore();
+        $pendingRequest->middleware()->onResponse(function (Response $response) {
+            // First, we'll use our LimitHelper to configure the limits on the request/connector
+            // this will populate the ID properly as well as setting the names if it needs to.
 
-        // Register the limit counter
+            $limits = LimitHelper::configureLimits($this->resolveLimits(), $this);
+            $store = $this->resolveRateLimitStore();
 
-        $pendingRequest->middleware()->onResponse(function (Response $response) use ($limits, $store) {
             $limitThatWasExceeded = null;
 
+            // Now we'll iterate over every limit class, and we'll check if the limit has
+            // been reached. We'll increment each of the limits and continue with the
+            // response.
+
             foreach ($limits as $limit) {
+                // Let's first hydrate the limit from the store, this will set the timestamp
+                // and the number of hits that has already happened.
+
+                // Todo: We might have a bug with the "timestamp" that is generated - we never clear
+                // Todo: it or do anything with it once it's set - so maybe we need to think about that.
+
                 $limit = $store->hydrateLimit($limit);
 
                 // We'll make sure our limits haven't been exceeded yet - if they haven't then
                 // we will run the `checkForTooManyAttempts` method.
 
-                // Todo: Consider renaming checkForTooManyAttempts
-
                 if (is_null($limitThatWasExceeded)) {
-                    $this->checkForTooManyAttempts($response, $limit);
+                    $this->checkResponseForLimit($response, $limit);
                 }
 
                 if ($limit->hasExceeded()) {
@@ -70,6 +73,10 @@ trait HasRateLimiting
 
                 $store->commitLimit($limit);
             }
+
+            // If a limit was previously exceeded this means that the manual
+            // check to see if a response has hit the limit has come into
+            // place. We should make sure to throw the exception here.
 
             if (isset($limitThatWasExceeded)) {
                 $this->throwLimitException($limitThatWasExceeded);
@@ -98,7 +105,7 @@ trait HasRateLimiting
      * @param \Saloon\Http\RateLimiting\Limit $limit
      * @return void
      */
-    protected function checkForTooManyAttempts(Response $response, Limit $limit): void
+    protected function checkResponseForLimit(Response $response, Limit $limit): void
     {
         if ($response->status() === 429) {
             $limit->exceeded();

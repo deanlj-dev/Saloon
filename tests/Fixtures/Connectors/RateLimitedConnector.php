@@ -50,7 +50,6 @@ class RateLimitedConnector extends Connector
             Limit::allow(10)->everyMinute(),
             Limit::allow(15)->everyHour(),
             Limit::allow(20)->untilMidnightTonight(),
-            Limit::allow(1000)->everySeconds(604800, 'week'),
         ];
     }
 
