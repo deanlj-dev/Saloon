@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Saloon\Http\RateLimiting;
 
+use Closure;
 use DateTimeImmutable;
 use ReflectionClass;
+use Saloon\Contracts\Response;
 use Saloon\Exceptions\LimitException;
 use Saloon\Helpers\Date;
 use InvalidArgumentException;
@@ -83,15 +85,24 @@ class Limit
     protected bool $exceeded = false;
 
     /**
+     * Greedy closure
+     *
+     * @var Closure|null
+     */
+    protected ?Closure $greedyHandler = null;
+
+    /**
      * Constructor
      *
      * @param int $allow
      * @param float $threshold
+     * @param callable|null $greedyHandler
      */
-    public function __construct(int $allow, float $threshold = 1)
+    public function __construct(int $allow, float $threshold = 1, callable $greedyHandler = null)
     {
         $this->allow = $allow;
         $this->threshold = $threshold;
+        $this->greedyHandler = $greedyHandler;
     }
 
     /**
@@ -104,6 +115,17 @@ class Limit
     public static function allow(int $requests, float $threshold = 1): static
     {
         return new self($requests, $threshold);
+    }
+
+    /**
+     * Construct a greedy limiter
+     *
+     * @param callable $onResponse
+     * @return static
+     */
+    public static function greedy(callable $onResponse): static
+    {
+        return (new self(PHP_INT_MAX, greedyHandler: $onResponse(...)))->everySeconds(126_144_000, 'greedy');
     }
 
     /**
@@ -342,5 +364,15 @@ class Limit
     public function validate()
     {
         // Todo: Validate we have allow and releaseInSeconds
+    }
+
+    public function isGreedy(): bool
+    {
+        return isset($this->greedyHandler);
+    }
+
+    public function handleGreedyResponse(Response $response): void
+    {
+        call_user_func($this->greedyHandler, $response, $this);
     }
 }

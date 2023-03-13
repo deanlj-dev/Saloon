@@ -48,9 +48,12 @@ class RateLimitedConnector extends Connector
     protected function resolveLimits(): array
     {
         return [
-            Limit::allow(10)->everyMinute(),
-            Limit::allow(15)->everyHour(),
-            Limit::allow(20)->untilMidnightTonight(),
+            Limit::greedy(function (Response $response, Limit $limit) {
+                // Todo: Work this one out
+            })
+//            Limit::allow(10)->everyMinute(),
+//            Limit::allow(15)->everyHour(),
+//            Limit::allow(20)->untilMidnightTonight(),
         ];
     }
 

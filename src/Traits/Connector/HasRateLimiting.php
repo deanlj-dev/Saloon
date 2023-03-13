@@ -49,11 +49,16 @@ trait HasRateLimiting
                 // and the number of hits that has already happened.
 
                 $limit = $store->hydrateLimit($limit);
+                $isGreedy = $limit->isGreedy();
+
+                if ($isGreedy) {
+                    $limit->handleGreedyResponse($response);
+                }
 
                 // We'll make sure our limits haven't been exceeded yet - if they haven't then
                 // we will run the `checkForTooManyAttempts` method.
 
-                if (is_null($limitThatWasExceeded)) {
+                if (is_null($limitThatWasExceeded) && $isGreedy === false) {
                     $this->checkResponseForLimit($response, $limit);
                 }
 
@@ -62,8 +67,11 @@ trait HasRateLimiting
                 }
 
                 // Now we'll "hit" the limit which will increase the count
+                // We won't hit if it's a greedy limiter
 
-                $limit->hit();
+                if ($isGreedy === false) {
+                    $limit->hit();
+                }
 
                 // Next, we'll commit the limit onto the store
 
