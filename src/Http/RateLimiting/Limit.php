@@ -129,7 +129,7 @@ class Limit
     {
         // Todo: Build a better implementation
 
-        return (new self(PHP_INT_MAX, greedyHandler: $onResponse(...)))->everySeconds(126_144_000, 'greedy');
+        return (new self(1, greedyHandler: $onResponse(...)))->everySeconds(60, 'greedy');
     }
 
     /**
@@ -309,6 +309,10 @@ class Limit
             throw new LimitException('Unable to unserialize the store data as it does not contain the timestamp or hits');
         }
 
+        if (! isset($data['allow']) && $this->isGreedy()) {
+            throw new LimitException('Unable to unserialize the store data as the greedy limiter requires the allow in the data');
+        }
+
         $expiry = $data['timestamp'];
         $hits = $data['hits'];
 
@@ -328,6 +332,13 @@ class Limit
         $this->setExpiryTimestamp($expiry);
         $this->hit($hits);
 
+        // If this is a greedy limiter then we should apply the "allow" which will
+        // be useful to check if we have reached our rate limit
+
+        if ($this->isGreedy()) {
+            $this->allow = $data['allow'];
+        }
+
         return $this;
     }
 
@@ -339,10 +350,16 @@ class Limit
      */
     public function serializeStoreData(): string
     {
-        return json_encode([
+        $data = [
             'timestamp' => $this->getExpiryTimestamp(),
             'hits' => $this->getHits(),
-        ], JSON_THROW_ON_ERROR);
+        ];
+
+        if ($this->isGreedy()) {
+            $data['allow'] = $this->allow;
+        }
+
+        return json_encode($data, JSON_THROW_ON_ERROR);
     }
 
     /**

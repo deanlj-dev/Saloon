@@ -49,11 +49,11 @@ class RateLimitedConnector extends Connector
     {
         return [
 //            Limit::greedy(function (Response $response, Limit $limit) {
-//                // Todo: Work this one out
+//                $limit->exceeded(256);
 //            })
-            Limit::allow(10)->everyMinute(),
-            Limit::allow(15)->everyHour(),
-            Limit::allow(20)->untilMidnightTonight(),
+//            Limit::allow(10)->everyMinute(),
+//            Limit::allow(15)->everyHour(),
+//            Limit::allow(20)->untilMidnightTonight(),
         ];
     }
 
