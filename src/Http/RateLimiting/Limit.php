@@ -120,11 +120,15 @@ class Limit
     /**
      * Construct a greedy limiter
      *
+     * Todo: Use a better method name. Maybe fromResponse? Limit::fromResponse() would be better
+     *
      * @param callable $onResponse
      * @return static
      */
     public static function greedy(callable $onResponse): static
     {
+        // Todo: Build a better implementation
+
         return (new self(PHP_INT_MAX, greedyHandler: $onResponse(...)))->everySeconds(126_144_000, 'greedy');
     }
 
