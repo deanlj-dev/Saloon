@@ -11,7 +11,7 @@ use Saloon\Http\RateLimiting\Limit;
 use Saloon\Contracts\RateLimitStore;
 use Saloon\Traits\Plugins\AcceptsJson;
 use Saloon\Traits\Connector\HasRateLimiting;
-use Saloon\Http\RateLimiting\Stores\RedisStore;
+use Saloon\Http\RateLimiting\Stores\PredisStore;
 
 class RateLimitedConnector extends Connector
 {
@@ -61,6 +61,6 @@ class RateLimitedConnector extends Connector
      */
     protected function resolveRateLimitStore(): RateLimitStore
     {
-        return new RedisStore(new Client);
+        return new PredisStore(new Client);
     }
 }

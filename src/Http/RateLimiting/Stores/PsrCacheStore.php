@@ -1,21 +1,19 @@
 <?php
 
-declare(strict_types=1);
-
 namespace Saloon\Http\RateLimiting\Stores;
 
-use Redis;
-use Saloon\Http\RateLimiting\Limit;
+use Psr\SimpleCache\CacheInterface;
 use Saloon\Contracts\RateLimitStore;
+use Saloon\Http\RateLimiting\Limit;
 
-class RedisStore implements RateLimitStore
+class PsrCacheStore implements RateLimitStore
 {
     /**
      * Constructor
      *
-     * @param \Redis $redis
+     * @param \Psr\SimpleCache\CacheInterface $cache
      */
-    public function __construct(protected Redis $redis)
+    public function __construct(readonly protected CacheInterface $cache)
     {
         //
     }
@@ -26,12 +24,12 @@ class RedisStore implements RateLimitStore
      * @param \Saloon\Http\RateLimiting\Limit $limit
      * @return \Saloon\Http\RateLimiting\Limit
      * @throws \JsonException
-     * @throws \RedisException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
      * @throws \Saloon\Exceptions\LimitException
      */
     public function hydrateLimit(Limit $limit): Limit
     {
-        $serializedLimitData = $this->redis->get($limit->getName());
+        $serializedLimitData = $this->cache->get($limit->getName());
 
         if (is_null($serializedLimitData)) {
             return $limit;
@@ -46,14 +44,14 @@ class RedisStore implements RateLimitStore
      * @param \Saloon\Http\RateLimiting\Limit $limit
      * @return void
      * @throws \JsonException
-     * @throws \RedisException
+     * @throws \Psr\SimpleCache\InvalidArgumentException
      */
     public function commitLimit(Limit $limit): void
     {
-        $this->redis->setex(
+        $this->cache->set(
             key: $limit->getName(),
-            expire: $limit->getRemainingSeconds(),
-            value: $limit->serializeStoreData()
+            value: $limit->serializeStoreData(),
+            ttl: $limit->getRemainingSeconds(),
         );
     }
 }

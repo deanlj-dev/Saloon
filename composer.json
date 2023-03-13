@@ -33,12 +33,15 @@
         "pestphp/pest": "^1.21",
         "phpstan/phpstan": "^1.9",
         "predis/predis": "^2.1",
+        "psr/simple-cache": "^3.0",
         "spatie/ray": "^1.33",
-        "symfony/dom-crawler": "^6.0"
+        "symfony/dom-crawler": "^6.0",
+        "ext-redis": "*"
     },
     "suggest": {
         "illuminate/collections": "Required for the response collect() method.",
-        "symfony/dom-crawler": "Required for the response dom() method."
+        "symfony/dom-crawler": "Required for the response dom() method.",
+        "psr/simple-cache": "Required to use the PsrCacheStore for rate limiting."
     },
     "minimum-stability": "stable",
     "autoload": {

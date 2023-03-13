@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Saloon\Http\RateLimiting\Stores;
 
-use Redis;
+use Predis\Client;
 use Saloon\Http\RateLimiting\Limit;
 use Saloon\Contracts\RateLimitStore;
 
-class RedisStore implements RateLimitStore
+class PredisStore implements RateLimitStore
 {
     /**
      * Constructor
      *
-     * @param \Redis $redis
+     * @param \Predis\Client $redis
      */
-    public function __construct(protected Redis $redis)
+    public function __construct(protected Client $redis)
     {
         //
     }
@@ -23,11 +23,11 @@ class RedisStore implements RateLimitStore
     /**
      * Hydrate the properties on the limit (hits, timestamp etc)
      *
+     * Todo: Consider changing the name
+     *
      * @param \Saloon\Http\RateLimiting\Limit $limit
      * @return \Saloon\Http\RateLimiting\Limit
-     * @throws \JsonException
-     * @throws \RedisException
-     * @throws \Saloon\Exceptions\LimitException
+     * @throws \JsonException|\Saloon\Exceptions\LimitException
      */
     public function hydrateLimit(Limit $limit): Limit
     {
@@ -43,16 +43,17 @@ class RedisStore implements RateLimitStore
     /**
      * Commit the properties on the limit (hits, timestamp)
      *
+     * Todo: Consider changing the name
+     *
      * @param \Saloon\Http\RateLimiting\Limit $limit
      * @return void
      * @throws \JsonException
-     * @throws \RedisException
      */
     public function commitLimit(Limit $limit): void
     {
         $this->redis->setex(
             key: $limit->getName(),
-            expire: $limit->getRemainingSeconds(),
+            seconds: $limit->getRemainingSeconds(),
             value: $limit->serializeStoreData()
         );
     }
