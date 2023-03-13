@@ -120,7 +120,7 @@ class Limit
     /**
      * Construct a greedy limiter
      *
-     * Todo: Use a better method name. Maybe fromResponse? Limit::fromResponse() would be better
+     * Todo: Use a better method name. Maybe fromResponse? Limit::fromResponse() would be better or Limit::auto() could work
      *
      * @param callable $onResponse
      * @return static
