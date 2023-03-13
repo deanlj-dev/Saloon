@@ -18,7 +18,6 @@ trait HasRateLimiting
      *
      * @param \Saloon\Contracts\PendingRequest $pendingRequest
      * @return void
-     * @throws \ReflectionException
      */
     public function bootHasRateLimiting(PendingRequest $pendingRequest): void
     {
@@ -48,9 +47,6 @@ trait HasRateLimiting
             foreach ($limits as $limit) {
                 // Let's first hydrate the limit from the store, this will set the timestamp
                 // and the number of hits that has already happened.
-
-                // Todo: We might have a bug with the "timestamp" that is generated - we never clear
-                // Todo: it or do anything with it once it's set - so maybe we need to think about that.
 
                 $limit = $store->hydrateLimit($limit);
 

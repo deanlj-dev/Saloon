@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Saloon\Tests\Fixtures\Connectors;
 
 use Predis\Client;
+use Saloon\Contracts\Response;
 use Saloon\Http\Connector;
 use Saloon\Http\RateLimiting\Limit;
 use Saloon\Contracts\RateLimitStore;

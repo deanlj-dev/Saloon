@@ -69,4 +69,14 @@ class Date
     {
         return DateTimeImmutable::createFromMutable($this->dateTime);
     }
+
+    /**
+     * Get the current timestamp
+     *
+     * @return int
+     */
+    public static function getTimestamp(): int
+    {
+        return static::now()->toDateTime()->getTimestamp();
+    }
 }

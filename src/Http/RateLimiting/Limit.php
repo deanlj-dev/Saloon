@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Saloon\Http\RateLimiting;
 
+use DateTimeImmutable;
 use ReflectionClass;
+use Saloon\Exceptions\LimitException;
 use Saloon\Helpers\Date;
 use InvalidArgumentException;
 use Saloon\Contracts\Request;
@@ -19,59 +21,89 @@ class Limit
      */
     protected string $objectName;
 
+    /**
+     * Name of the limit
+     *
+     * @var string|null
+     */
     protected ?string $name = null;
 
+    /**
+     * Number of hits the limit has had
+     *
+     * @var int
+     */
     protected int $hits = 0;
 
+    /**
+     * Number of requests that are allowed in the time period
+     *
+     * @var int
+     */
     protected int $allow;
 
-    protected float $threshold;
+    /**
+     * The threshold that should be used when determining if a limit has been reached
+     *
+     * Must be between 0 and 1. For example if you want the limiter to kick in at 85%
+     * you must set the threshold to 0.85
+     *
+     * @var float
+     */
+    protected float $threshold = 1;
 
+    /**
+     * The expiry timestamp of the rate limiter. Used to determine how much longer
+     * a limiter's hits should last.
+     *
+     * @var int|null
+     */
     protected ?int $expiryTimestamp = null;
 
+    /**
+     * The number of seconds it will take to release the rate limit after it has
+     * been reached.
+     *
+     * @var int
+     */
     protected int $releaseInSeconds;
 
+    /**
+     * Optional time to live key to specify the time in the default key.
+     *
+     * @var string|null
+     */
     protected ?string $timeToLiveKey = null;
 
+    /**
+     * Determines if a limit has been manually exceeded.
+     *
+     * @var bool
+     */
     protected bool $exceeded = false;
 
+    /**
+     * Constructor
+     *
+     * @param int $allow
+     * @param float $threshold
+     */
     public function __construct(int $allow, float $threshold = 1)
     {
-        // Todo: Build protections into here to prevent limiters being used that haven't been properly setup
-
         $this->allow = $allow;
         $this->threshold = $threshold;
     }
 
-    public static function allow(int $allow, float $threshold = 1): static
-    {
-        return new self($allow, $threshold);
-    }
-
     /**
-     * This method is run
+     * Construct a limiter's allow and threshold
      *
-     * @param int $hits
-     * @param int|null $expiryTimestamp
-     * @return $this
+     * @param int $requests
+     * @param float $threshold
+     * @return static
      */
-    public function hydrateFromStore(int $hits = 0, int $expiryTimestamp = null): static
+    public static function allow(int $requests, float $threshold = 1): static
     {
-        $this->hits = $hits;
-        $this->expiryTimestamp = $expiryTimestamp;
-
-        return $this;
-    }
-
-    public function exceeded($releaseInSeconds = null): void
-    {
-        $this->exceeded = true;
-
-        $this->hits = $this->allow;
-
-        if (isset($releaseInSeconds)) {
-            $this->expiryTimestamp = Date::now()->addSeconds($releaseInSeconds)->toDateTime()->getTimestamp();
-        }
+        return new self($requests, $threshold);
     }
 
     /**
@@ -91,16 +123,6 @@ class Limit
         return $this->hits >= ($threshold * $this->allow);
     }
 
-    public function getReleaseInSeconds(): int
-    {
-        return $this->releaseInSeconds;
-    }
-
-    public function getHits(): int
-    {
-        return $this->hits;
-    }
-
     public function hit(int $amount = 1): static
     {
         if (! $this->hasExceeded()) {
@@ -108,6 +130,22 @@ class Limit
         }
 
         return $this;
+    }
+
+    public function exceeded($releaseInSeconds = null): void
+    {
+        $this->exceeded = true;
+
+        $this->hits = $this->allow;
+
+        if (isset($releaseInSeconds)) {
+            $this->expiryTimestamp = Date::now()->addSeconds($releaseInSeconds)->toDateTime()->getTimestamp();
+        }
+    }
+
+    public function getHits(): int
+    {
+        return $this->hits;
     }
 
     /**
@@ -133,8 +171,9 @@ class Limit
         return $this;
     }
 
-
     /**
+     * Set the object name for the default name
+     *
      * @param \Saloon\Contracts\Connector|\Saloon\Contracts\Request $object
      * @return $this
      * @throws \ReflectionException
@@ -163,6 +202,17 @@ class Limit
         $this->expiryTimestamp = $expiryTimestamp;
 
         return $this;
+    }
+
+    /**
+     * Set the expiry timestamp from seconds
+     *
+     * @param int $seconds
+     * @return $this
+     */
+    public function setExpiryTimestampFromSeconds(int $seconds): static
+    {
+        return $this->setExpiryTimestamp(Date::getTimestamp() + $seconds);
     }
 
     public function everySeconds(int $seconds, ?string $timeToLiveKey = null): static
@@ -210,10 +260,10 @@ class Limit
 
     public function untilMidnightTonight(): static
     {
-        // Todo: Consider using timestamp from Date helper
+        $tomorrowTimestamp = (new DateTimeImmutable('tomorrow'))->getTimestamp();
 
         return $this->everySeconds(
-            seconds: strtotime('tomorrow') - time(),
+            seconds: $tomorrowTimestamp - Date::getTimestamp(),
             timeToLiveKey: 'midnight'
         );
     }
@@ -221,21 +271,36 @@ class Limit
     /**
      * Set the properties from an encoded string
      *
-     * @param string $properties
+     * @param string $serializedLimitData
      * @return $this
-     * @throws \JsonException
+     * @throws \JsonException|\Saloon\Exceptions\LimitException
      */
-    public function unserializeStoreData(string $properties): static
+    public function unserializeStoreData(string $serializedLimitData): static
     {
-        $values = json_decode($properties, true, 512, JSON_THROW_ON_ERROR);
+        $data = json_decode($serializedLimitData, true, 512, JSON_THROW_ON_ERROR);
 
-        if (isset($values['timestamp'])) {
-            $this->setExpiryTimestamp($values['timestamp']);
+        if (! isset($data['timestamp'], $data['hits'])) {
+            throw new LimitException('Unable to unserialize the store data as it does not contain the timestamp or hits');
         }
 
-        if (isset($values['hits'])) {
-            $this->hit($values['hits']);
+        $expiry = $data['timestamp'];
+        $hits = $data['hits'];
+
+        // If the current timestamp is past the expiry, then we shouldn't set any data
+        // this will mean that the next value will be a fresh counter in the store
+        // with a fresh timestamp. This is especially useful for the stores that
+        // don't have a TTL like file store.
+
+        if (Date::getTimestamp() > $expiry) {
+            return $this;
         }
+
+        // If our expiry hasn't passed, yet then we'll set the expiry timestamp
+        // and, we'll also update the hits so the current instance has the
+        // number of previous hits.
+
+        $this->setExpiryTimestamp($expiry);
+        $this->hit($hits);
 
         return $this;
     }
@@ -261,9 +326,12 @@ class Limit
      */
     public function getRemainingSeconds(): int
     {
-        $now = Date::now()->toDateTime()->getTimestamp();
+        return (int)round($this->getExpiryTimestamp() - Date::getTimestamp());
+    }
 
-        return (int)round($this->getExpiryTimestamp() - $now);
+    public function getReleaseInSeconds(): int
+    {
+        return $this->releaseInSeconds;
     }
 
     public function hasExceeded(): bool
@@ -273,6 +341,6 @@ class Limit
 
     public function validate()
     {
-        //
+        // Todo: Validate we have allow and releaseInSeconds
     }
 }

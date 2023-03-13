@@ -27,17 +27,17 @@ class RedisStore implements RateLimitStore
      *
      * @param \Saloon\Http\RateLimiting\Limit $limit
      * @return \Saloon\Http\RateLimiting\Limit
-     * @throws \JsonException
+     * @throws \JsonException|\Saloon\Exceptions\LimitException
      */
     public function hydrateLimit(Limit $limit): Limit
     {
-        $value = $this->redis->get($limit->getName());
+        $serializedLimitData = $this->redis->get($limit->getName());
 
-        if (is_null($value)) {
+        if (is_null($serializedLimitData)) {
             return $limit;
         }
 
-        return $limit->unserializeStoreData($value);
+        return $limit->unserializeStoreData($serializedLimitData);
     }
 
     /**
