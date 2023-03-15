@@ -7,6 +7,7 @@ namespace Saloon\Http\RateLimiting;
 use Closure;
 use DateTimeImmutable;
 use ReflectionClass;
+use Saloon\Contracts\RateLimitStore;
 use Saloon\Contracts\Response;
 use Saloon\Exceptions\LimitException;
 use Saloon\Helpers\Date;
@@ -85,24 +86,24 @@ class Limit
     protected bool $exceeded = false;
 
     /**
-     * Greedy closure
+     * Custom response handler
      *
      * @var Closure|null
      */
-    protected ?Closure $greedyHandler = null;
+    protected ?Closure $responseHandler = null;
 
     /**
      * Constructor
      *
      * @param int $allow
      * @param float $threshold
-     * @param callable|null $greedyHandler
+     * @param callable|null $responseHandler
      */
-    public function __construct(int $allow, float $threshold = 1, callable $greedyHandler = null)
+    public function __construct(int $allow, float $threshold = 1, callable $responseHandler = null)
     {
         $this->allow = $allow;
         $this->threshold = $threshold;
-        $this->greedyHandler = $greedyHandler;
+        $this->responseHandler = $responseHandler;
     }
 
     /**
@@ -118,18 +119,14 @@ class Limit
     }
 
     /**
-     * Construct a greedy limiter
-     *
-     * Todo: Use a better method name. Maybe fromResponse? Limit::fromResponse() would be better or Limit::auto() could work
+     * Construct a custom "fromResponse" limier
      *
      * @param callable $onResponse
      * @return static
      */
-    public static function greedy(callable $onResponse): static
+    public static function fromResponse(callable $onResponse): static
     {
-        // Todo: Build a better implementation
-
-        return (new self(1, greedyHandler: $onResponse(...)))->everySeconds(60, 'greedy');
+        return (new self(1, 1, $onResponse(...)))->everySeconds(120, 'response');
     }
 
     /**
@@ -295,74 +292,6 @@ class Limit
     }
 
     /**
-     * Set the properties from an encoded string
-     *
-     * @param string $serializedLimitData
-     * @return $this
-     * @throws \JsonException|\Saloon\Exceptions\LimitException
-     */
-    public function unserializeStoreData(string $serializedLimitData): static
-    {
-        $data = json_decode($serializedLimitData, true, 512, JSON_THROW_ON_ERROR);
-
-        if (! isset($data['timestamp'], $data['hits'])) {
-            throw new LimitException('Unable to unserialize the store data as it does not contain the timestamp or hits');
-        }
-
-        if (! isset($data['allow']) && $this->isGreedy()) {
-            throw new LimitException('Unable to unserialize the store data as the greedy limiter requires the allow in the data');
-        }
-
-        $expiry = $data['timestamp'];
-        $hits = $data['hits'];
-
-        // If the current timestamp is past the expiry, then we shouldn't set any data
-        // this will mean that the next value will be a fresh counter in the store
-        // with a fresh timestamp. This is especially useful for the stores that
-        // don't have a TTL like file store.
-
-        if (Date::getTimestamp() > $expiry) {
-            return $this;
-        }
-
-        // If our expiry hasn't passed, yet then we'll set the expiry timestamp
-        // and, we'll also update the hits so the current instance has the
-        // number of previous hits.
-
-        $this->setExpiryTimestamp($expiry);
-        $this->hit($hits);
-
-        // If this is a greedy limiter then we should apply the "allow" which will
-        // be useful to check if we have reached our rate limit
-
-        if ($this->isGreedy()) {
-            $this->allow = $data['allow'];
-        }
-
-        return $this;
-    }
-
-    /**
-     * Get the encoded properties to be stored
-     *
-     * @return string
-     * @throws \JsonException
-     */
-    public function serializeStoreData(): string
-    {
-        $data = [
-            'timestamp' => $this->getExpiryTimestamp(),
-            'hits' => $this->getHits(),
-        ];
-
-        if ($this->isGreedy()) {
-            $data['allow'] = $this->allow;
-        }
-
-        return json_encode($data, JSON_THROW_ON_ERROR);
-    }
-
-    /**
      * Get the remaining time in seconds
      *
      * @return int
@@ -387,13 +316,107 @@ class Limit
         // Todo: Validate we have allow and releaseInSeconds
     }
 
-    public function isGreedy(): bool
+    public function usesResponse(): bool
     {
-        return isset($this->greedyHandler);
+        return isset($this->responseHandler);
     }
 
-    public function handleGreedyResponse(Response $response): void
+    public function handleResponse(Response $response): void
     {
-        call_user_func($this->greedyHandler, $response, $this);
+        if (! $this->usesResponse()) {
+            return;
+        }
+
+        call_user_func($this->responseHandler, $response, $this);
+    }
+
+    /**
+     * Update the limit from the store
+     *
+     * @param \Saloon\Contracts\RateLimitStore $store
+     * @return $this
+     * @throws \JsonException
+     * @throws \Saloon\Exceptions\LimitException
+     */
+    public function update(RateLimitStore $store): static
+    {
+        $storeData = $store->get($this->getName());
+
+        // We'll just ignore if the store doesn't contain anything. This can
+        // happen if there isn't anything inside the store.
+
+        if (empty($storeData)) {
+            return $this;
+        }
+
+        $data = json_decode($storeData, true, 512, JSON_THROW_ON_ERROR);
+
+        if (! isset($data['timestamp'], $data['hits'])) {
+            throw new LimitException('Unable to unserialize the store data as it does not contain the timestamp or hits');
+        }
+
+        if (! isset($data['allow']) && $this->usesResponse()) {
+            throw new LimitException('Unable to unserialize the store data as the fromResponse limiter requires the allow in the data');
+        }
+
+        $expiry = $data['timestamp'];
+        $hits = $data['hits'];
+
+        // If the current timestamp is past the expiry, then we shouldn't set any data
+        // this will mean that the next value will be a fresh counter in the store
+        // with a fresh timestamp. This is especially useful for the stores that
+        // don't have a TTL like file store.
+
+        if (Date::getTimestamp() > $expiry) {
+            return $this;
+        }
+
+        // If our expiry hasn't passed, yet then we'll set the expiry timestamp
+        // and, we'll also update the hits so the current instance has the
+        // number of previous hits.
+
+        $this->setExpiryTimestamp($expiry);
+        $this->hit($hits);
+
+        // If this is a fromResponse limiter then we should apply the "allow" which will
+        // be useful to check if we have reached our rate limit
+
+        if ($this->usesResponse()) {
+            $this->allow = $data['allow'];
+        }
+
+        return $this;
+    }
+
+    /**
+     * Save the limit into the store
+     *
+     * @param \Saloon\Contracts\RateLimitStore $store
+     * @return $this
+     * @throws \JsonException
+     * @throws \Saloon\Exceptions\LimitException
+     */
+    public function save(RateLimitStore $store): static
+    {
+        $data = [
+            'timestamp' => $this->getExpiryTimestamp(),
+            'hits' => $this->getHits(),
+        ];
+
+        if ($this->usesResponse()) {
+            $data['allow'] = $this->allow;
+        }
+
+        $successful = $store->set(
+            key: $this->getName(),
+            value: json_encode($data, JSON_THROW_ON_ERROR),
+            ttl: $this->getRemainingSeconds(),
+        );
+
+        if ($successful === false) {
+            throw new LimitException('The store was unable to update the limit.');
+        }
+
+        return $this;
     }
 }

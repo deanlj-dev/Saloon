@@ -45,20 +45,21 @@ trait HasRateLimiting
             // response.
 
             foreach ($limits as $limit) {
-                // Let's first hydrate the limit from the store, this will set the timestamp
+                // Let's first update the limit from the store, this will set the timestamp
                 // and the number of hits that has already happened.
 
-                $limit = $store->hydrateLimit($limit);
-                $isGreedy = $limit->isGreedy();
+                $usesResponse = $limit->usesResponse();
 
-                if ($isGreedy) {
-                    $limit->handleGreedyResponse($response);
+                $limit->update($store);
+
+                if ($usesResponse === true) {
+                    $limit->handleResponse($response);
                 }
 
                 // We'll make sure our limits haven't been exceeded yet - if they haven't then
                 // we will run the `checkForTooManyAttempts` method.
 
-                if (is_null($limitThatWasExceeded) && $isGreedy === false) {
+                if (is_null($limitThatWasExceeded) && $usesResponse === false) {
                     $this->checkResponseForLimit($response, $limit);
                 }
 
@@ -67,15 +68,15 @@ trait HasRateLimiting
                 }
 
                 // Now we'll "hit" the limit which will increase the count
-                // We won't hit if it's a greedy limiter
+                // We won't hit if it's a from response limiter
 
-                if ($isGreedy === false) {
+                if ($usesResponse === false) {
                     $limit->hit();
                 }
 
                 // Next, we'll commit the limit onto the store
 
-                $store->commitLimit($limit);
+                $limit->save($store);
             }
 
             // If a limit was previously exceeded this means that the manual
@@ -133,7 +134,9 @@ trait HasRateLimiting
      *
      * @param float|null $threshold
      * @return \Saloon\Http\RateLimiting\Limit|null
+     * @throws \JsonException
      * @throws \ReflectionException
+     * @throws \Saloon\Exceptions\LimitException
      */
     public function getExceededLimit(?float $threshold = null): ?Limit
     {
@@ -146,7 +149,7 @@ trait HasRateLimiting
         $store = $this->resolveRateLimitStore();
 
         foreach ($limits as $limit) {
-            $limit = $store->hydrateLimit($limit);
+            $limit->update($store);
 
             if ($limit->hasReachedLimit($threshold)) {
                 return $limit;
@@ -161,7 +164,9 @@ trait HasRateLimiting
      *
      * @param float|null $threshold
      * @return bool
+     * @throws \JsonException
      * @throws \ReflectionException
+     * @throws \Saloon\Exceptions\LimitException
      */
     public function hasReachedRateLimit(?float $threshold = null): bool
     {

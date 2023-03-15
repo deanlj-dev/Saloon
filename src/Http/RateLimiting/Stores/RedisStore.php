@@ -29,7 +29,7 @@ class RedisStore implements RateLimitStore
      * @throws \RedisException
      * @throws \Saloon\Exceptions\LimitException
      */
-    public function hydrateLimit(Limit $limit): Limit
+    public function get(Limit $limit): Limit
     {
         $serializedLimitData = $this->redis->get($limit->getName());
 
@@ -48,7 +48,7 @@ class RedisStore implements RateLimitStore
      * @throws \JsonException
      * @throws \RedisException
      */
-    public function commitLimit(Limit $limit): void
+    public function set(Limit $limit): void
     {
         $this->redis->setex(
             key: $limit->getName(),

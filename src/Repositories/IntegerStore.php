@@ -12,7 +12,7 @@ class IntegerStore implements IntegerStoreContract
     use Conditionable;
 
     /**
-     * store Data
+     * Store Data
      *
      * @var int|null
      */

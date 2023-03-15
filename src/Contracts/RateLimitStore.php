@@ -4,23 +4,23 @@ declare(strict_types=1);
 
 namespace Saloon\Contracts;
 
-use Saloon\Http\RateLimiting\Limit;
-
 interface RateLimitStore
 {
     /**
-     * Hydrate the properties on the limit (hits, timestamp etc)
+     * Get a rate limit from the store
      *
-     * @param \Saloon\Http\RateLimiting\Limit $limit
-     * @return \Saloon\Http\RateLimiting\Limit
+     * @param string $key
+     * @return string|null
      */
-    public function hydrateLimit(Limit $limit): Limit;
+    public function get(string $key): ?string;
 
     /**
-     * Commit the properties on the limit (hits, timestamp)
+     * Set the rate limit into the store
      *
-     * @param \Saloon\Http\RateLimiting\Limit $limit
-     * @return void
+     * @param string $key
+     * @param string $value
+     * @param int $ttl
+     * @return bool
      */
-    public function commitLimit(Limit $limit): void;
+    public function set(string $key, string $value, int $ttl): bool;
 }

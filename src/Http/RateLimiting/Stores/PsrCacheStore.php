@@ -27,7 +27,7 @@ class PsrCacheStore implements RateLimitStore
      * @throws \Psr\SimpleCache\InvalidArgumentException
      * @throws \Saloon\Exceptions\LimitException
      */
-    public function hydrateLimit(Limit $limit): Limit
+    public function get(Limit $limit): Limit
     {
         $serializedLimitData = $this->cache->get($limit->getName());
 
@@ -46,7 +46,7 @@ class PsrCacheStore implements RateLimitStore
      * @throws \JsonException
      * @throws \Psr\SimpleCache\InvalidArgumentException
      */
-    public function commitLimit(Limit $limit): void
+    public function set(Limit $limit): void
     {
         $this->cache->set(
             key: $limit->getName(),

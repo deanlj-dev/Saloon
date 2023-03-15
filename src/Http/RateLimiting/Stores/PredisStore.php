@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Saloon\Http\RateLimiting\Stores;
 
 use Predis\Client;
+use Predis\Response\Status;
 use Saloon\Http\RateLimiting\Limit;
 use Saloon\Contracts\RateLimitStore;
 
@@ -21,40 +22,32 @@ class PredisStore implements RateLimitStore
     }
 
     /**
-     * Hydrate the properties on the limit (hits, timestamp etc)
+     * Get the limit data for a given key
      *
-     * Todo: Consider changing the name
-     *
-     * @param \Saloon\Http\RateLimiting\Limit $limit
-     * @return \Saloon\Http\RateLimiting\Limit
-     * @throws \JsonException|\Saloon\Exceptions\LimitException
+     * @param string $key
+     * @return string|null
      */
-    public function hydrateLimit(Limit $limit): Limit
+    public function get(string $key): ?string
     {
-        $serializedLimitData = $this->redis->get($limit->getName());
-
-        if (is_null($serializedLimitData)) {
-            return $limit;
-        }
-
-        return $limit->unserializeStoreData($serializedLimitData);
+        return $this->redis->get($key);
     }
 
     /**
      * Commit the properties on the limit (hits, timestamp)
      *
-     * Todo: Consider changing the name
-     *
-     * @param \Saloon\Http\RateLimiting\Limit $limit
-     * @return void
-     * @throws \JsonException
+     * @param string $key
+     * @param string $value
+     * @param int $ttl
+     * @return bool
      */
-    public function commitLimit(Limit $limit): void
+    public function set(string $key, string $value, int $ttl): bool
     {
-        $this->redis->setex(
-            key: $limit->getName(),
-            seconds: $limit->getRemainingSeconds(),
-            value: $limit->serializeStoreData()
+        $status = $this->redis->setex(
+            key: $key,
+            seconds: $ttl,
+            value: $value
         );
+
+        return $status->getPayload() === 'OK';
     }
 }
